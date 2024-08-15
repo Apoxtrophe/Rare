@@ -1,0 +1,14 @@
+[package]
+name = "Rare"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+astoria_ml = { path = "/home/astoria/Documents/Rust/Asterix"}
+bevy = "0.14.1"
+rand = "0.8.5"
+rayon = "1.10.0"
+
+[profile.dev]
+# Disables all warnings
+warn = false
