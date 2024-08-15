@@ -1,4 +1,4 @@
-use std::borrow::BorrowMut;
+use std::{borrow::BorrowMut, f64::consts::PI};
 
 use astoria_ml::Network;
 use bevy::{asset::Assets, color::palettes::css::{DARK_GREEN, LIGHT_GOLDENROD_YELLOW, LINEN, ORANGE, PURPLE, RED, WHITE}, input::keyboard::KeyboardInput, prelude::{Commands, Mesh, ResMut}, sprite::{ColorMaterial, MaterialMesh2dBundle, Mesh2dHandle}};
@@ -12,7 +12,7 @@ const BRAIN_LAYOUT: [usize;5] = [6, 12, 18, 6, 3];
 const MAP_SIZE: i32 = 500;
 const MOUSE_VELOCITY: f32 = 4.0; 
 const MOUSE_TURN_ANGLE: f32 = 1.0;
-const MOUSE_SIGHT_DIST: f32 = 100.0;
+const MOUSE_SIGHT_DIST: f32 = 200.0;
 const MOUSE_SIGHT_LINES: usize = 5;
 
 #[derive(Component)]
@@ -74,35 +74,37 @@ pub fn mouse_vision(
     food_query: Query<(&Food, &Transform)>,
     mut gizmo: Gizmos,
 ) {
-    for (mut mouse, transform) in query.iter_mut() {
-        let mut closest_distance = MOUSE_SIGHT_DIST;
+  let angles = [-PI / 4.0, -PI / 8.0, 0.0, PI / 8.0, PI / 4.0]; // Define the five angles to scan
+  for (mut mouse, transform) in query.iter_mut() {
+    println!("{:?}", mouse.sight);
+    let mut sight_distances = [MOUSE_SIGHT_DIST; 5];
 
-        for (food, food_transform) in food_query.iter() {
-          let half_extents = Vec2::new(FOOD_RADI, FOOD_RADI);
-          let food_aabb = Aabb2d::new(
-              food.position.truncate(),  // This is the center of the AABB
-              half_extents,              // This is the half size (half extents) of the AABB
-          );
-            // We're casting a single ray (sight line) in front of the mouse
-            let (sin, cos) = transform.rotation.to_euler(EulerRot::XYZ).2.sin_cos();
-            let ray_direction = Vec2::new(-sin, cos);
-            let ray_start = mouse.position.xy();
-            let ray_end = ray_start + ray_direction * MOUSE_SIGHT_DIST;
-            
-            gizmo.line_2d(ray_start, ray_end, Color::from(WHITE));
-            
-            println!("mouse dir:{}\nRay dir{}\nMouse Sight{:?}\nMouse pos{}\nRay Pos{:?}\n\n", mouse.rotation, ray_direction, mouse.sight, mouse.position, [ray_start,ray_end]);
-
-            // Check if this ray intersects with the food's AABB
-            if let Some(intersection_distance) = ray_intersects_aabb(ray_start, ray_end, food_aabb) {
-                if intersection_distance < closest_distance {
-                    closest_distance = intersection_distance;
-                }
-            }
+    for (food, food_transform) in food_query.iter() {
+      let half_extents = Vec2::new(FOOD_RADI, FOOD_RADI);
+      let food_aabb = Aabb2d::new(
+        food.position.truncate(),  
+        half_extents,              
+      );
+      
+      for (i, angle) in angles.iter().enumerate() {
+        let (sin, cos) = (transform.rotation.to_euler(EulerRot::XYZ).2 + *angle as f32).sin_cos();
+        let ray_direction = Vec2::new(-sin, cos);
+        let ray_start = mouse.position.xy();
+        let ray_end = ray_start + ray_direction * MOUSE_SIGHT_DIST;
+        
+        gizmo.line_2d(ray_start, ray_end, Color::from(WHITE));
+        
+        if let Some(intersection_distance) = ray_intersects_aabb(ray_start, ray_end, food_aabb) {
+          if intersection_distance < sight_distances[i] {
+            sight_distances[i] = intersection_distance;
+          }
         }
-
-        mouse.sight[0] = closest_distance.clamp(0.0, 1.0); // Update the sight to the closest detected food
+      }
     }
+    for i in 0..MOUSE_SIGHT_LINES {
+          mouse.sight[i] = sight_distances[i].clamp(0.0, 1.0)
+    }
+  }
 }
 
 fn ray_intersects_aabb(ray_start: Vec2, ray_end: Vec2, aabb: Aabb2d) -> Option<f32> {
