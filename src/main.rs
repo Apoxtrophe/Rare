@@ -12,6 +12,7 @@ fn main() {
         .add_systems(Update, mouse_update)
         .add_systems(Update, mouse_upkeep)
         .add_systems(Update, update_food)
+        .add_systems(Update, move_food)
         .run();
 }
 

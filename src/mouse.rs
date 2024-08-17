@@ -14,13 +14,13 @@ pub const VIEW_SCALE: f32 = 4.0;
 const TICK_RATE: f32 = 0.01;
 const GENERATION_TIME: f32 = 10.0;
 const MUTATION_RATE: f32 = 0.1;
-const FOOD_NUM: usize = 40;
+const FOOD_NUM: usize = 400;
 const FOOD_RADI: f32 = 12.0;
 const BRAIN_LAYOUT: [usize; 4] = [11, 16, 8, 2];
-const MAP_SIZE: i32 = 2000;
-const MOUSE_NUMBERS: usize = 10;
-const MOUSE_VELOCITY: f32 = 4.0;
-const MOUSE_TURN_ANGLE: f32 = 2.0;
+const MAP_SIZE: i32 = 4000;
+const MOUSE_NUMBERS: usize = 20;
+const MOUSE_VELOCITY: f32 = 32.0;
+const MOUSE_TURN_ANGLE: f32 = 16.0;
 const MOUSE_SIGHT_DIST: f32 = 300.0;
 const MOUSE_SIGHT_LINES: usize = 20;
 const MOUSE_SIGHT_ANGLE: f32 = 90.0_f32;
@@ -164,14 +164,20 @@ pub fn mouse_new_generation(
     mut generation: ResMut<Generation>,
 ) {
     generation.generation += 1;
+
     if let Some((best_mouse, _, _)) = query.iter().max_by_key(|(mouse, _,_)| mouse.fitness) {
         let best_brain = best_mouse.brain.clone();
     
         println!("Generation: {}\n Fitness: {}\n\n\n", generation.generation, best_mouse.fitness);
         for (mut mouse, _, _) in query.iter_mut() {
+            let start_pos = Vec3::new(
+                random::<f32>() * MAP_SIZE as f32 - MAP_SIZE as f32 / 4.0,
+                random::<f32>() * MAP_SIZE as f32 - MAP_SIZE as f32 / 4.0,
+                1.0,
+            );
             let mut new_brain = best_brain.clone();
             new_brain.mutate(MUTATION_RATE);
-            mouse.position = Vec3::ZERO;
+            mouse.position = start_pos;
             mouse.fitness = 0;
             mouse.brain = new_brain;
         }
@@ -266,7 +272,7 @@ pub fn update_food(
         for (mut ent, mut food) in food_query.iter_mut() {
             if mouse.position.distance(food.position) < FOOD_RADI * 2.0 {
                 let (x,y) = random_position_in_map();
-                commands.entity(ent).despawn();
+                food.position = Vec3::new(x, y, 0.0);
                 mouse.fitness += 1;
             }
         }
@@ -313,6 +319,13 @@ fn update_mouse_transform(mouse: &mut Mouse, transform: &mut Transform) {
     transform.rotation = Quat::from_rotation_z(mouse.rotation.to_euler(EulerRot::XYZ).2);
 }
 
+pub fn move_food(
+    mut food_query: Query<(&mut Transform, &mut Food)>,
+) {
+    for mut food in food_query.iter_mut() {
+        food.0.translation = food.1.position;
+    }
+}
 
 fn mouse_move(input: f32, mouse: &mut Mouse) {
     let forward = Quat::from_rotation_z(mouse.rotation.to_euler(EulerRot::XYZ).2) * Vec3::Y;
