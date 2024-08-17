@@ -11,20 +11,20 @@ use bevy::{
 use rand::prelude::*;
 
 pub const VIEW_SCALE: f32 = 4.0;
-const TICK_RATE: f32 = 0.01;
-const GENERATION_TIME: f32 = 10.0;
+const TICK_RATE: f32 = 0.001;
+const GENERATION_TIME: f32 = 3.0;
 const MUTATION_RATE: f32 = 0.1;
-const FOOD_NUM: usize = 400;
+const FOOD_NUM: usize = 50;
 const FOOD_RADI: f32 = 12.0;
 const BRAIN_LAYOUT: [usize; 4] = [11, 16, 8, 2];
 const MAP_SIZE: i32 = 4000;
 const MOUSE_NUMBERS: usize = 20;
-const MOUSE_VELOCITY: f32 = 32.0;
-const MOUSE_TURN_ANGLE: f32 = 16.0;
+const MOUSE_VELOCITY: f32 = 20.0;
+const MOUSE_TURN_ANGLE: f32 = 10.0;
 const MOUSE_SIGHT_DIST: f32 = 300.0;
 const MOUSE_SIGHT_LINES: usize = 20;
 const MOUSE_SIGHT_ANGLE: f32 = 90.0_f32;
-const MOUSE_NOSE_DIST: f32 = 1000.0;
+const MOUSE_NOSE_DIST: f32 = 10000.0;
 
 const DEBUG: bool = false;
 const PLAYER: bool = false; 
@@ -124,14 +124,8 @@ pub fn mouse_new(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
-    let mut start_pos = Vec3::ZERO;
-    if RANDOM_START {
-        start_pos = Vec3::new(
-            random::<f32>() * MAP_SIZE as f32 - MAP_SIZE as f32 / 4.0,
-            random::<f32>() * MAP_SIZE as f32 - MAP_SIZE as f32 / 4.0,
-            1.0,
-        );
-    }
+    let (x,y) = random_position_in_map();
+    let start_pos = Vec3::new(x, y, 0.0);
     let mouse_mesh: Mesh2dHandle = meshes
         .add(Triangle2d::new(
             Vec2::new(-1.0, 0.0),
