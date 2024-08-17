@@ -10,19 +10,25 @@ use bevy::{
 };
 use rand::prelude::*;
 
-const FOOD_NUM: usize = 4;
+pub const VIEW_SCALE: f32 = 4.0;
+const TICK_RATE: f32 = 0.01;
+const GENERATION_TIME: f32 = 10.0;
+const MUTATION_RATE: f32 = 0.1;
+const FOOD_NUM: usize = 40;
 const FOOD_RADI: f32 = 12.0;
-const BRAIN_LAYOUT: [usize; 5] = [6, 12, 18, 6, 3];
-const MAP_SIZE: i32 = 500;
+const BRAIN_LAYOUT: [usize; 4] = [11, 16, 8, 2];
+const MAP_SIZE: i32 = 2000;
+const MOUSE_NUMBERS: usize = 10;
 const MOUSE_VELOCITY: f32 = 4.0;
 const MOUSE_TURN_ANGLE: f32 = 2.0;
 const MOUSE_SIGHT_DIST: f32 = 300.0;
 const MOUSE_SIGHT_LINES: usize = 20;
 const MOUSE_SIGHT_ANGLE: f32 = 90.0_f32;
-const MOUSE_NOSE_DIST: f32 = 500.0;
+const MOUSE_NOSE_DIST: f32 = 1000.0;
 
-const DEBUG: bool = true;
-const PLAYER: bool = true; 
+const DEBUG: bool = false;
+const PLAYER: bool = false; 
+const RANDOM_START: bool = true;
 
 #[derive(Component)]
 pub struct Mouse {
@@ -39,28 +45,110 @@ pub struct Food {
     position: Vec3,
 }
 
-pub fn mouse_create(
+#[derive(Resource)]
+pub struct UpdateTimer(Timer);
+
+#[derive(Resource)]
+pub struct GenerationTimer(Timer);
+
+#[derive(Resource)]
+pub struct Generation {
+    generation: usize,
+}
+
+pub fn mouse_update(
+    mut commands: Commands,
+    mut mouse_query: Query<(&mut Mouse, &mut Transform, Entity)>,
+    mut food_query: Query<(Entity, &mut Food)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut gizmo: Gizmos,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut query: Query<&mut Text, With<Debug>>,
+    time: Res<Time>,
+    mut timer: ResMut<UpdateTimer>,
+    mut gen_timer: ResMut<GenerationTimer>,
+    mut generation: ResMut<Generation>,
+) {
+    if timer.0.tick(time.delta()).just_finished() {
+        for (mut mouse, mut transform, _) in mouse_query.iter_mut() {
+          mouse_vision(&mut mouse, &food_query, &mut gizmo);
+          mouse_nose(&mut mouse, &food_query);
+          //update_food(commands, food_query, meshes, materials, mouse_query);
+          update_mouse_transform(&mut mouse, &mut transform);
+          if PLAYER {mouse_player(&keyboard_input, &mut mouse)}
+          if !PLAYER {mouse_brain(&mut mouse)}
+          if DEBUG {mouse_debug(&mut mouse, &mut query)}
+          //println!("working{:?}",time.delta());
+        }
+        if gen_timer.0.tick(time.delta()).just_finished() {
+            mouse_new_generation(mouse_query, generation)
+        }
+    }
+    
+}
+
+pub fn mouse_setup(
+    mut commands: Commands,
+) {
+    commands.insert_resource(Generation { generation: 0 });
+    commands.insert_resource(UpdateTimer(Timer::from_seconds(TICK_RATE, TimerMode::Repeating)));
+    commands.insert_resource(GenerationTimer(Timer::from_seconds(GENERATION_TIME, TimerMode::Repeating)));    
+}
+
+pub fn mouse_brain (
+    mut mouse: &mut Mouse,
+) {
+    let mut inputs = mouse.sight.clone();
+    inputs.push(mouse.nose.clone());
+    let outputs = mouse.brain.forward(inputs.clone());
+    mouse_move(outputs[0], &mut mouse);
+    mouse_turn(outputs[1], &mut mouse);
+}
+
+pub fn mouse_upkeep(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mouse_query: Query<&Mouse>,
 ) {
-    let mouse_mesh = meshes
+    let current_mouse = mouse_query.iter().count();
+    let needed_mouse = MOUSE_NUMBERS - current_mouse;
+    for _ in 0..needed_mouse {
+        mouse_new(&mut commands, &mut meshes, &mut materials);
+    }
+}
+
+pub fn mouse_new(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
+    let mut start_pos = Vec3::ZERO;
+    if RANDOM_START {
+        start_pos = Vec3::new(
+            random::<f32>() * MAP_SIZE as f32 - MAP_SIZE as f32 / 4.0,
+            random::<f32>() * MAP_SIZE as f32 - MAP_SIZE as f32 / 4.0,
+            1.0,
+        );
+    }
+    let mouse_mesh: Mesh2dHandle = meshes
         .add(Triangle2d::new(
             Vec2::new(-1.0, 0.0),
             Vec2::new(1.0, 0.0),
             Vec2::new(0.0, 3.0),
         ))
         .into();
-
+    
     commands.spawn((
         MaterialMesh2dBundle {
-            mesh: mouse_mesh,
+            mesh: mouse_mesh.clone(),
             transform: Transform::default().with_scale(Vec3::splat(12.)),
             material: materials.add(Color::from(LIGHT_GOLDENROD_YELLOW)),
             ..default()
         },
         Mouse {
-            position: Vec3::new(0.0, 0.0, 1.0),
+            position: start_pos,
             rotation: Quat::from_rotation_z(0.0),
             sight: vec![0.0; MOUSE_SIGHT_LINES],
             nose: 0.0,
@@ -68,6 +156,26 @@ pub fn mouse_create(
             brain: Network::new(BRAIN_LAYOUT.to_vec()),
         },
     ));
+}
+
+
+pub fn mouse_new_generation(
+    mut query: Query<(&mut Mouse, &mut Transform, Entity)>,
+    mut generation: ResMut<Generation>,
+) {
+    generation.generation += 1;
+    if let Some((best_mouse, _, _)) = query.iter().max_by_key(|(mouse, _,_)| mouse.fitness) {
+        let best_brain = best_mouse.brain.clone();
+    
+        println!("Generation: {}\n Fitness: {}\n\n\n", generation.generation, best_mouse.fitness);
+        for (mut mouse, _, _) in query.iter_mut() {
+            let mut new_brain = best_brain.clone();
+            new_brain.mutate(MUTATION_RATE);
+            mouse.position = Vec3::ZERO;
+            mouse.fitness = 0;
+            mouse.brain = new_brain;
+        }
+    }
 }
 
 fn mouse_nose(
@@ -83,25 +191,7 @@ fn mouse_nose(
 }
 
 
-pub fn mouse_update(
-    mut commands: Commands,
-    mut mouse_query: Query<(&mut Mouse, &mut Transform)>,
-    mut food_query: Query<(Entity, &mut Food)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut gizmo: Gizmos,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Text, With<Debug>>,
-) {
-  for (mut mouse, mut transform) in mouse_query.iter_mut() {
-    mouse_vision(&mut mouse, &food_query, &mut gizmo);
-    mouse_nose(&mut mouse, &food_query);
-    update_food(&mut commands, &mut mouse, &mut food_query, &mut meshes, &mut materials);
-    update_mouse_transform(&mut mouse, &mut transform);
-    if PLAYER {mouse_player(&keyboard_input, &mut mouse)}
-    if DEBUG {mouse_debug(&mut mouse, &mut query)}
-  }
-}
+
 
 fn mouse_vision(
   mouse: &mut Mouse,
@@ -142,7 +232,6 @@ fn mouse_vision(
         .iter()
         .map(|&d| (d.clamp(0.0, 1.0) - 1.0).abs().sqrt())
         .collect();
-    println!("{}", mouse.fitness);
 }
 
 fn ray_intersects_aabb(ray_start: Vec2, ray_end: Vec2, aabb: Aabb2d) -> Option<f32> {
@@ -165,13 +254,23 @@ fn ray_intersects_aabb(ray_start: Vec2, ray_end: Vec2, aabb: Aabb2d) -> Option<f
     }
 }
 
-fn update_food(
-    commands: &mut Commands,
-    mouse: &mut Mouse,
-    food_query: &mut Query<(Entity, &mut Food)>,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<ColorMaterial>>,
+pub fn update_food(
+    mut commands: Commands,
+    mut food_query: Query<(Entity, &mut Food)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut mouse_query: Query<&mut Mouse>,
 ) {
+    
+    for mut mouse in mouse_query.iter_mut() {
+        for (mut ent, mut food) in food_query.iter_mut() {
+            if mouse.position.distance(food.position) < FOOD_RADI * 2.0 {
+                let (x,y) = random_position_in_map();
+                commands.entity(ent).despawn();
+                mouse.fitness += 1;
+            }
+        }
+    }
   let food_mesh: Mesh2dHandle = meshes.add(Circle::new(FOOD_RADI)).into();
   let existing_food = food_query.iter().count();
   let food_needed = FOOD_NUM - existing_food;
@@ -190,12 +289,6 @@ fn update_food(
       },
     ));
   }
-  for (food_entity, food) in food_query.iter_mut() {
-    if mouse.position.distance(food.position) < FOOD_RADI * 2.0 {
-      commands.entity(food_entity).despawn();
-      mouse.fitness += 1;
-    }
-  }
 }
 
 fn mouse_player(keyboard_input: &Res<ButtonInput<KeyCode>>, mouse: &mut Mouse) {
@@ -211,8 +304,9 @@ fn mouse_player(keyboard_input: &Res<ButtonInput<KeyCode>>, mouse: &mut Mouse) {
     if keyboard_input.pressed(KeyCode::ArrowDown) {
         mouse_move(-1.0, mouse);
     }
-    
 }
+
+
 
 fn update_mouse_transform(mouse: &mut Mouse, transform: &mut Transform) {
     transform.translation = mouse.position;
@@ -248,7 +342,6 @@ fn mouse_debug(
     mouse: &Mouse,
     query: &mut Query<&mut Text, With<Debug>>,
 ) {
-    println!("eee");
     let mut sight_output: Vec<&str> = Vec::new();
     for &sight in &mouse.sight {
         let sight_line = match sight {
@@ -271,7 +364,6 @@ fn mouse_debug(
     );
 
     for mut text in query.iter_mut() {
-        println!("{:?}", text.clone());
         text.sections[0].value = new_text.clone();
     }
 }
