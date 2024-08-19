@@ -12,13 +12,13 @@ use rand::prelude::*;
 
 pub const VIEW_SCALE: f32 = 4.0;
 const TICK_RATE: f32 = 0.001;
-const GENERATION_TIME: f32 = 3.0;
+const GENERATION_TIME: f32 = 10.0;
 const MUTATION_RATE: f32 = 0.1;
-const FOOD_NUM: usize = 50;
+const FOOD_NUM: usize = 100;
 const FOOD_RADI: f32 = 12.0;
 const BRAIN_LAYOUT: [usize; 4] = [11, 16, 8, 2];
 const MAP_SIZE: i32 = 4000;
-const MOUSE_NUMBERS: usize = 20;
+const MOUSE_NUMBERS: usize = 10;
 const MOUSE_VELOCITY: f32 = 20.0;
 const MOUSE_TURN_ANGLE: f32 = 10.0;
 const MOUSE_SIGHT_DIST: f32 = 300.0;
@@ -73,7 +73,7 @@ pub fn mouse_update(
     if timer.0.tick(time.delta()).just_finished() {
         for (mut mouse, mut transform, _) in mouse_query.iter_mut() {
           mouse_vision(&mut mouse, &food_query, &mut gizmo);
-          mouse_nose(&mut mouse, &food_query);
+          mouse_nose(&mut mouse, &mut food_query);
           //update_food(commands, food_query, meshes, materials, mouse_query);
           update_mouse_transform(&mut mouse, &mut transform);
           if PLAYER {mouse_player(&keyboard_input, &mut mouse)}
@@ -180,18 +180,30 @@ pub fn mouse_new_generation(
 
 fn mouse_nose(
     mouse: &mut Mouse,
-    food_query: &Query<(Entity, &mut Food)>,
-    ) {
-    let closest_distance = food_query
+    mut food_query: &mut Query<(Entity, &mut Food)>,
+) {
+    let closest_food = food_query
         .iter()
-        .map(|food| mouse.position.distance(food.1.position))
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or(MOUSE_NOSE_DIST);
-    mouse.nose = (1.0 - (closest_distance / MOUSE_NOSE_DIST)).clamp(0.0, 1.0);
+        .map(|(_, food)| {
+            let angle = mouse.position.angle_between(food.position);
+            let distance = mouse.position.distance(food.position);
+            (angle, distance)
+        })
+        .min_by(|(_, dist_a), (_, dist_b)| dist_a.partial_cmp(dist_b).unwrap());
+
+    if let Some((closest_angle, closest_distance)) = closest_food {
+        // Normalize the angle to be between -1.0 and 1.0
+        let normalized_angle = closest_angle / std::f32::consts::PI;
+        let clamped_angle = normalized_angle.clamp(-1.0, 1.0);
+
+        // Optionally, you can combine this with the distance calculation
+        let distance_factor = (1.0 - (closest_distance / MOUSE_NOSE_DIST)).clamp(0.0, 1.0);
+        mouse.nose = clamped_angle * distance_factor;
+    } else {
+        // If no food is found, set the nose to 0.0
+        mouse.nose = 0.0;
+    }
 }
-
-
-
 
 fn mouse_vision(
   mouse: &mut Mouse,

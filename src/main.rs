@@ -3,18 +3,22 @@ use bevy::{prelude::*, text::FontAtlas};
 
 mod mouse;
 use mouse::*;
+mod mice;
+use mice::*;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_systems(Startup, setup)
-        .add_systems(Startup, mouse_setup)
-        .add_systems(Update, mouse_update)
-        .add_systems(Update, mouse_upkeep)
-        .add_systems(Update, update_food)
-        .add_systems(Update, move_food)
+        .add_systems(Startup, mice_setup)
+        .add_systems(Update, camera_zoom)
+        .add_systems(Update, mice_collect)
+        .add_systems(Update, mice_apply)
+        .add_systems(Update, mice_generation)
         .run();
 }
+
+//meshes: &mut ResMut<Assets<Mesh>>,
+//materials: &mut ResMut<Assets<ColorMaterial>>,
 
 fn setup(
     mut commands: Commands,
