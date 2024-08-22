@@ -1,6 +1,6 @@
 use std::{borrow::BorrowMut, f32::consts::PI};
 
-use astoria_ml::Network;
+use astoria_ml::*;
 use bevy::{
     asset::Assets,
     color::palettes::css::{DARK_ORANGE, GREY, LIGHT_GOLDENROD_YELLOW},
@@ -10,27 +10,25 @@ use bevy::{
 };
 use rand::prelude::*;
 
-use crate::mouse;
-
 // CAMERA DEFAULTS
 const CAMERA_SCALE: f32 = 0.5;
 // MICE DEFUALTS
-const BRAIN: [usize; 5] = [10,12,8,6,2];
+const BRAIN: [usize; 7] = [11,28,32,24,16,8,2];
 const VISION_RANGE: f32 = 100.0;
-const VISION_ANGLE: f32 = 90.0;
-const VISION_LINES: usize = 10;
+const VISION_ANGLE: f32 = 50.0;
+const VISION_LINES: usize = 11;
 const COLOR_DEFAULT: [f32; 3] = [1.0, 1.0, 1.0];
-const MICE_VELOCITY: f32 = 5.0;
-const MICE_ROTATION: f32 = 50.0;
+const MICE_VELOCITY: f32 = 1.0;
+const MICE_ROTATION: f32 = 20.0;
 // SIMULATION DEFAULTS
 const DEBUG: bool = false;
 const POLULATION: usize = 100;
-const MAP_SIZE: f32 = 1000.0;
-const MIN_RADIUS: f32 = 400.0;
+const MAP_SIZE: f32 = 700.0;
+const MIN_RADIUS: f32 = 100.0;
 const MUTATION: f32 = 0.1;
 const SIMULATION_TIME: f32 = 10.0;
 // FOOD DEFAULTS
-const FOOD_COUNT: usize = 100;
+const FOOD_COUNT: usize = 1000;
 const FOOD_RADIUS: f32 = 2.0;
 
 #[derive(Resource)]
@@ -38,6 +36,9 @@ pub struct Generation {
     epoch: usize,
     max_fitness: usize,
 }
+
+#[derive(Resource)]
+pub struct GenerationTimer(Timer);
 
 #[derive(Component)]
 pub struct Cheese; 
@@ -52,8 +53,7 @@ pub struct Mice {
     brain: Network,
 }
 
-#[derive(Resource)]
-pub struct GenerationTimer(Timer);
+
 
 
 impl Default for Mice {
@@ -67,7 +67,7 @@ impl Default for Mice {
             sight: vec![0.0; VISION_LINES],
             fitness: 0,
             color: COLOR_DEFAULT,
-            brain: Network::new(BRAIN.to_vec()),
+            brain: Network::new(BRAIN.to_vec(), ActivationFunction::ReLU, ActivationFunction::Tanh)
         }
     }
 }
@@ -280,7 +280,7 @@ fn food_move(
 ) -> (usize, Vec3) {
     let mut mice_fitness = mice.fitness;
     let mut food_position = food_transform.translation;
-    if mice.position.distance(food_transform.translation) < FOOD_RADIUS * 2.0 {
+    if mice.position.distance(food_transform.translation) < FOOD_RADIUS {
         mice_fitness += 1;
         food_position = new_food_pos();
     }
@@ -294,12 +294,17 @@ pub fn mice_generation(
     time: ResMut<Time>,
 ) {
     if gen_timer.0.tick(time.delta()).just_finished() {
+        let mut average = 0.0;
+        for (mice,_,_) in query.iter() {
+            average += mice.fitness as f32;
+        }
+        let mean = average / 100.0 as f32;
         generation.epoch += 1;
     
         if let Some((best_mice, _, _)) = query.iter().max_by_key(|(mice, _,_)| mice.fitness) {
             let best_brain = best_mice.brain.clone();
         
-            println!("{} *** Fitness: {}", generation.epoch, best_mice.fitness);
+            println!("{} *** Fitness: {} Mean: {}", generation.epoch, best_mice.fitness, mean);
             for (mut mice, _, _) in query.iter_mut() {
                 let mut new_brain = best_brain.clone();
                 new_brain.mutate(MUTATION);
